@@ -632,7 +632,7 @@ class App(customtkinter.CTk):
                     app_current_screen = screen
                     break
             
-            # If the app is on the screen we're about to switch, move it
+            # If the app is on the screen we're about to switch, move it to another screen
             if app_current_screen and app_current_screen == screen_to_switch:
                 other_screens = [s for s in all_screens if s != screen_to_switch]
                 if other_screens:
@@ -965,7 +965,7 @@ class App(customtkinter.CTk):
         
         minimize_radio = customtkinter.CTkRadioButton(
             tray_frame,
-            text="When I click Minimize (_) → Hide to tray",
+            text="When I click Minimize (_) → Hide to tray (keep running)",
             variable=self.tray_radio_var,
             value="minimize",
             command=self.update_tray_setting
@@ -974,7 +974,7 @@ class App(customtkinter.CTk):
         
         both_radio = customtkinter.CTkRadioButton(
             tray_frame,
-            text="Both Close and Minimize → Hide to tray",
+            text="Both Close and Minimize → Hide to tray (keep running)",
             variable=self.tray_radio_var,
             value="both",
             command=self.update_tray_setting
@@ -1000,6 +1000,32 @@ class App(customtkinter.CTk):
             wraplength=320
         )
         note_text.pack(side="left", padx=(5, 10), pady=8)
+
+        # Save / Cancel buttons for settings
+        btn_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(12, 0))
+
+        def save_and_apply_settings():
+            # Update and persist tray setting, then show confirmation
+            try:
+                self.update_tray_setting()
+                try:
+                    messagebox.showinfo("Success", "Settings saved!", parent=settings_window)
+                except Exception:
+                    pass
+                settings_window.destroy()
+            except Exception as e:
+                logging.error(f"Failed to save settings: {e}")
+                try:
+                    messagebox.showerror("Error", "Failed to save settings.", parent=settings_window)
+                except Exception:
+                    pass
+
+        save_btn = customtkinter.CTkButton(btn_frame, text="Save", command=save_and_apply_settings, height=32)
+        save_btn.pack(side="right", padx=(0, 6))
+
+        cancel_btn = customtkinter.CTkButton(btn_frame, text="Cancel", command=settings_window.destroy, height=32)
+        cancel_btn.pack(side="right", padx=(0, 6))
 
     def show_theme_settings(self):
         """Show theme settings dialog"""
@@ -1185,7 +1211,7 @@ class App(customtkinter.CTk):
                     label_text = f"{fav_name}: {display_name} → {input_source}"
                     label = customtkinter.CTkLabel(fav_frame, text=label_text, font=("Arial", 11))
                     label.pack(side="left", padx=8, pady=6)
-                    
+
                     delete_btn = customtkinter.CTkButton(
                         fav_frame, text="Delete", width=70, height=28,
                         command=lambda n=fav_name: delete_favorite(n),
@@ -1193,6 +1219,14 @@ class App(customtkinter.CTk):
                         hover_color=("#C62828", "#B71C1C")
                     )
                     delete_btn.pack(side="right", padx=8)
+
+                    edit_btn = customtkinter.CTkButton(
+                        fav_frame, text="Edit", width=70, height=28,
+                        command=lambda n=fav_name: edit_favorite(n),
+                        fg_color=("#1976D2", "#1565C0"),
+                        hover_color=("#1565C0", "#0D47A1")
+                    )
+                    edit_btn.pack(side="right", padx=8)
             
             # Dynamically adjust window height based on actual content size
             manage_window.update_idletasks()
@@ -1200,9 +1234,154 @@ class App(customtkinter.CTk):
             manage_window.geometry(f"480x{required_height}")
         
         def delete_favorite(name):
-            self.remove_favorite(name)
-            update_favorites_list()
-            self.refresh_favorites_buttons()
+            try:
+                try:
+                    confirm = messagebox.askyesno("Confirm Delete", f"Delete favorite '{name}'?", parent=manage_window)
+                except Exception:
+                    confirm = True
+
+                if not confirm:
+                    return
+
+                if self.remove_favorite(name):
+                    update_favorites_list()
+                    self.refresh_favorites_buttons()
+                    try:
+                        messagebox.showinfo("Success", f"Favorite '{name}' removed!", parent=manage_window)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        messagebox.showerror("Error", f"Failed to remove favorite '{name}'", parent=manage_window)
+                    except Exception:
+                        pass
+            except Exception as e:
+                logging.error(f"Failed to remove favorite {name}: {e}")
+
+        def edit_favorite(name):
+            """Open an edit dialog to rename or change monitor/input for a favorite"""
+            current = self.favorites.get(name)
+            if not current:
+                messagebox.showerror("Error", f"Favorite '{name}' not found", parent=manage_window)
+                return
+
+            try:
+                monitor_id, input_source = current
+            except Exception:
+                monitor_id, input_source = 0, "HDMI1"
+
+            edit_win = customtkinter.CTkToplevel(manage_window)
+            edit_win.title(f"Edit Favorite - {name}")
+            edit_win.transient(manage_window)
+            edit_win.grab_set()
+            edit_win.resizable(False, False)
+
+            frm = customtkinter.CTkFrame(edit_win)
+            frm.pack(fill="both", expand=True, padx=12, pady=12)
+
+            # Name
+            name_label2 = customtkinter.CTkLabel(frm, text="Name:", font=("Arial", 11))
+            name_label2.grid(row=0, column=0, sticky="w", pady=(0, 8))
+            name_var2 = customtkinter.StringVar(value=name)
+            name_entry2 = customtkinter.CTkEntry(frm, textvariable=name_var2, height=28)
+            name_entry2.grid(row=0, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
+
+            # Monitor
+            mon_label2 = customtkinter.CTkLabel(frm, text="Monitor:", font=("Arial", 11))
+            mon_label2.grid(row=1, column=0, sticky="w", pady=(0, 8))
+
+            monitors_list = self.monitors_data if hasattr(self, 'monitors_data') and self.monitors_data else []
+            mon_choices = [f"{m.get('id')}: {m.get('display_name')}" for m in monitors_list] if monitors_list else ["0"]
+            default_mon_str = next((s for s in mon_choices if s.startswith(str(monitor_id) + ":")), mon_choices[0])
+
+            mon_var2 = customtkinter.StringVar(value=default_mon_str)
+            mon_menu2 = customtkinter.CTkOptionMenu(frm, variable=mon_var2, values=mon_choices, height=28)
+            mon_menu2.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
+
+            # Input
+            input_label2 = customtkinter.CTkLabel(frm, text="Input:", font=("Arial", 11))
+            input_label2.grid(row=2, column=0, sticky="w", pady=(0, 8))
+
+            # Determine inputs for the selected monitor
+            def inputs_for_monitor_id(sel_id):
+                for mon in monitors_list:
+                    if mon.get('id') == sel_id:
+                        return mon.get('inputs', []) or []
+                return []
+
+            try:
+                sel_id_init = int(default_mon_str.split(':', 1)[0].strip()) if ':' in default_mon_str else int(default_mon_str)
+            except Exception:
+                sel_id_init = 0
+
+            inputs_list2 = inputs_for_monitor_id(sel_id_init) or ["DP1", "HDMI1", "DP2", "HDMI2"]
+            input_var2 = customtkinter.StringVar(value=input_source if input_source in inputs_list2 else (inputs_list2[0] if inputs_list2 else "HDMI1"))
+            input_menu2 = customtkinter.CTkOptionMenu(frm, variable=input_var2, values=inputs_list2, height=28)
+            input_menu2.grid(row=2, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
+
+            frm.grid_columnconfigure(1, weight=1)
+
+            def update_input_options2(*args):
+                sel = mon_var2.get()
+                try:
+                    sel_id = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
+                except Exception:
+                    return
+                new_inputs = inputs_for_monitor_id(sel_id) or ["DP1", "HDMI1", "DP2", "HDMI2"]
+                try:
+                    input_menu2.configure(values=new_inputs)
+                    input_var2.set(new_inputs[0])
+                except Exception:
+                    pass
+
+            mon_var2.trace_add('write', update_input_options2)
+
+            def save_edit():
+                newname = name_var2.get().strip()
+                if not newname:
+                    messagebox.showerror("Error", "Please enter a favorite name", parent=edit_win)
+                    return
+
+                existing = next((n for n in self.favorites.keys() if n.lower() == newname.lower() and n != name), None)
+                if existing:
+                    messagebox.showerror("Duplicate name", f"A favorite named '{existing}' already exists. Please choose a different name.", parent=edit_win)
+                    try:
+                        name_entry2.focus_set()
+                        name_entry2.select_range(0, 'end')
+                    except Exception:
+                        pass
+                    return
+
+                sel = mon_var2.get()
+                try:
+                    monitor_id_new = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
+                except ValueError:
+                    messagebox.showerror("Error", "Invalid monitor selection", parent=edit_win)
+                    return
+
+                input_new = input_var2.get()
+
+                try:
+                    if newname != name and name in self.favorites:
+                        del self.favorites[name]
+                    self.favorites[newname] = (monitor_id_new, input_new)
+                    self.save_favorites()
+                    update_favorites_list()
+                    self.refresh_favorites_buttons()
+                    messagebox.showinfo("Success", f"Favorite '{newname}' saved!", parent=edit_win)
+                    edit_win.destroy()
+                except Exception as e:
+                    logging.error(f"Failed to save edited favorite: {e}")
+                    messagebox.showerror("Error", "Failed to save favorite", parent=edit_win)
+
+            btn_frame = customtkinter.CTkFrame(frm, fg_color='transparent')
+            btn_frame.grid(row=3, column=0, columnspan=2, sticky='ew', pady=(10, 0))
+
+            save_btn = customtkinter.CTkButton(btn_frame, text="💾 Save", command=save_edit, height=34, width=90)
+            save_btn.pack(side="right", padx=(0, 6))
+
+            cancel_btn = customtkinter.CTkButton(btn_frame, text="Cancel", command=edit_win.destroy, height=34, width=90)
+            cancel_btn.pack(side="right", padx=(0, 6))
         
         # Add new favorite section
         add_section = customtkinter.CTkFrame(main_frame)
@@ -1269,6 +1448,17 @@ class App(customtkinter.CTk):
             name = name_var.get().strip()
             if not name:
                 messagebox.showerror("Error", "Please enter a favorite name", parent=manage_window)
+                return
+
+            # Enforce unique favorite names (case-insensitive)
+            existing = next((n for n in self.favorites.keys() if n.lower() == name.lower()), None)
+            if existing:
+                messagebox.showerror("Duplicate name", f"A favorite named '{existing}' already exists. Please choose a different name.", parent=manage_window)
+                try:
+                    name_entry.focus_set()
+                    name_entry.select_range(0, 'end')
+                except Exception:
+                    pass
                 return
             
             sel = mon_var.get()
@@ -1410,7 +1600,7 @@ class App(customtkinter.CTk):
                     recorded_keys.append(key_name)
                     
                     shortcut = '+'.join(recorded_keys)
-                    label.configure(text=f"Recorded: {shortcut}\n\nPress Enter to confirm or Esc to cancel")
+                    label.configure(text=f"Recorded: {shortcut}\n\nPress ENTER to confirm or ESC to cancel")
                     
                     if event.name == 'enter':
                         dialog.destroy()
@@ -1461,6 +1651,10 @@ class App(customtkinter.CTk):
                             
                             if self.add_shortcut(shortcut, monitor_id, input_source):
                                 update_shortcuts_list()
+                                try:
+                                    messagebox.showinfo("Success", f"Shortcut '{shortcut}' added!", parent=select_dialog)
+                                except Exception:
+                                    pass
                                 select_dialog.destroy()
                             else:
                                 messagebox.showerror("Error", "Failed to save shortcut", parent=select_dialog)
@@ -1500,24 +1694,51 @@ class App(customtkinter.CTk):
                     value = self.shortcuts.pop(shortcut)
                     self.shortcuts[new_shortcut] = value
                     self.save_shortcuts()
+
                     try:
                         keyboard.clear_all_hotkeys()
-                    except:
+                    except Exception:
                         pass
+
                     self.setup_global_hotkeys()
                     update_shortcuts_list()
-            
+
+                    try:
+                        messagebox.showinfo(
+                            "Success",
+                            f"Shortcut '{new_shortcut}' saved!",
+                            parent=editor_window
+                        )
+                    except Exception:
+                        pass
+
             record_shortcut(on_new_shortcut)
+
             
         def delete_shortcut(shortcut):
-            self.shortcuts.pop(shortcut)
-            self.save_shortcuts()
             try:
-                keyboard.clear_all_hotkeys()
-            except:
-                pass
-            self.setup_global_hotkeys()
-            update_shortcuts_list()
+                try:
+                    confirm = messagebox.askyesno("Confirm Delete", f"Delete shortcut '{shortcut}'?", parent=editor_window)
+                except Exception:
+                    confirm = True
+
+                if not confirm:
+                    return
+
+                self.shortcuts.pop(shortcut)
+                self.save_shortcuts()
+                try:
+                    keyboard.clear_all_hotkeys()
+                except Exception:
+                    pass
+                self.setup_global_hotkeys()
+                update_shortcuts_list()
+                try:
+                    messagebox.showinfo("Success", f"Shortcut '{shortcut}' deleted!", parent=editor_window)
+                except Exception:
+                    pass
+            except Exception as e:
+                logging.error(f"Failed to delete shortcut {shortcut}: {e}")
         
         # Buttons section
         buttons_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
