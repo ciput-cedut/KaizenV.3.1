@@ -1061,30 +1061,52 @@ class App(customtkinter.CTk):
             if name not in self.favorites:
                 self.status_label.configure(text=f"❌ Favorite '{name}' not found")
                 return False
-            
+
             monitor_id, input_source = self.favorites[name]
-            
+
             if monitor_id >= len(self.monitors):
                 self.status_label.configure(text=f"❌ Monitor {monitor_id} not found")
                 return False
-            
+
             # Get monitor display name (brand - model)
             monitor_name = f"Monitor {monitor_id}"
             for data in self.monitors_data:
                 if data.get('id') == monitor_id:
                     monitor_name = data.get('display_name', monitor_name)
                     break
-            
+
             # Move app if it's on the monitor being switched
             self.move_app_if_on_switching_monitor(monitor_id)
-            
+
+            # Normalize input_source for enum or code
+            input_obj = None
+            # Try enum attribute (e.g., HDMI1, DP1, USB_C, THUNDERBOLT)
+            normalized = input_source.replace("-", "_").replace(" ", "_").upper()
+            if hasattr(InputSource, normalized):
+                input_obj = getattr(InputSource, normalized)
+            elif input_source.upper() == "USB-C":
+                # Fallback to known code for USB-C
+                input_obj = 27  # VCP_INPUT_USB_C
+            elif input_source.upper() == "THUNDERBOLT":
+                input_obj = 26  # VCP_INPUT_THUNDERBOLT
+            else:
+                # Try to parse as int code (e.g., INPUT_27)
+                try:
+                    if input_source.startswith("INPUT_"):
+                        input_obj = int(input_source.split("_")[-1])
+                except Exception:
+                    pass
+
             with self.monitors[monitor_id] as monitor:
-                if hasattr(InputSource, input_source):
-                    input_obj = getattr(InputSource, input_source)
+                if input_obj is not None:
                     monitor.set_input_source(input_obj)
                     self.status_label.configure(text=f"✅ {monitor_name}: Switched to '{name}'")
                     logging.info(f"Switched {monitor_name} to favorite '{name}'")
                     return True
+                else:
+                    self.status_label.configure(text=f"❌ Unknown input source '{input_source}'")
+                    logging.error(f"Unknown input source '{input_source}' for favorite '{name}'")
+                    return False
         except Exception as e:
             self.status_label.configure(text=f"❌ Error: {str(e)[:40]}")
             logging.error(f"Error switching to favorite '{name}': {e}")
