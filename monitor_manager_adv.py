@@ -228,6 +228,10 @@ class App(customtkinter.CTk):
         self.geometry(self.ui.window_size(520, 540))
         self.resizable(True, True)  # Allow window resizing
         
+        # Position window on an active display (one showing PC content)
+        # This handles the case where primary display is connected but showing another input
+        self._position_on_active_display()
+        
         try:
             self.iconbitmap(resource_path('monitor_manager_icon.ico'))
         except:
@@ -741,6 +745,62 @@ class App(customtkinter.CTk):
         else:
             self.input_menu.set("No inputs found")
 
+    def _position_on_active_display(self):
+        """
+        Position the window on a display that is actively showing PC content.
+        Uses the same logic as move_app_if_on_switching_monitor but checks
+        which monitors respond to DDC/CI (indicating they're showing PC input).
+        """
+        try:
+            all_screens = get_screen_info()
+            if not all_screens or len(all_screens) <= 1:
+                return  # Only one screen or none, use default positioning
+            
+            # Get DDC/CI monitors to check which are showing PC content
+            ddc_monitors = get_monitors()
+            if not ddc_monitors:
+                return
+            
+            # Find monitors that respond to DDC/CI (showing PC input)
+            active_indices = []
+            for i, mon in enumerate(ddc_monitors):
+                try:
+                    with mon:
+                        mon.get_input_source()  # Will fail if not showing PC
+                        active_indices.append(i)
+                except Exception:
+                    pass  # Monitor not showing PC input
+            
+            if not active_indices:
+                return
+            
+            # Get current window position to find which screen it's on
+            self.update_idletasks()
+            app_x, app_y = self.winfo_x(), self.winfo_y()
+            
+            # Find current screen
+            current_screen = None
+            current_screen_idx = 0
+            for idx, screen in enumerate(all_screens):
+                if (screen.x <= app_x < screen.x + screen.width and
+                    screen.y <= app_y < screen.y + screen.height):
+                    current_screen = screen
+                    current_screen_idx = idx
+                    break
+            
+            # If current screen index is not in active list, move to an active screen
+            if current_screen_idx not in active_indices:
+                # Find an active screen to move to
+                for idx in active_indices:
+                    if idx < len(all_screens):
+                        new_screen = all_screens[idx]
+                        self.geometry(f"+{new_screen.x + 50}+{new_screen.y + 50}")
+                        self.update_idletasks()
+                        logging.info(f"Positioned app on active display {idx}")
+                        break
+        except Exception as e:
+            logging.debug(f"Could not position on active display: {e}")
+    
     def move_app_if_on_switching_monitor(self, monitor_id):
         """Move app window to another monitor if it's on the monitor being switched"""
         try:
