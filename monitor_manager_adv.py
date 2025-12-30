@@ -1290,6 +1290,8 @@ class App(customtkinter.CTk):
         
         # Default to normal (no system tray) behavior when settings missing
         tray_on = self.settings.get("tray_on", "none")
+        # Store original value to restore on cancel
+        original_tray_on = tray_on
         self.tray_radio_var = customtkinter.StringVar(value=tray_on)
         
         # Put the 'Normal Windows behavior' option first so it's shown on top
@@ -1297,8 +1299,7 @@ class App(customtkinter.CTk):
             tray_frame,
             text="Normal Windows behavior (no system tray)",
             variable=self.tray_radio_var,
-            value="none",
-            command=self.update_tray_setting
+            value="none"
         )
         none_radio.pack(anchor="w", pady=3, padx=5)
 
@@ -1306,8 +1307,7 @@ class App(customtkinter.CTk):
             tray_frame,
             text="When I click Close (X) → Hide to tray (keep running)",
             variable=self.tray_radio_var,
-            value="close",
-            command=self.update_tray_setting
+            value="close"
         )
         close_radio.pack(anchor="w", pady=3, padx=5)
         
@@ -1315,8 +1315,7 @@ class App(customtkinter.CTk):
             tray_frame,
             text="When I click Minimize (_) → Hide to tray (keep running)",
             variable=self.tray_radio_var,
-            value="minimize",
-            command=self.update_tray_setting
+            value="minimize"
         )
         minimize_radio.pack(anchor="w", pady=3, padx=5) 
         
@@ -1324,8 +1323,7 @@ class App(customtkinter.CTk):
             tray_frame,
             text="Both Close and Minimize → Hide to tray (keep running)",
             variable=self.tray_radio_var,
-            value="both",
-            command=self.update_tray_setting
+            value="both"
         )
         both_radio.pack(anchor="w", pady=3, padx=5)
         
@@ -1374,10 +1372,15 @@ class App(customtkinter.CTk):
         center_frame = customtkinter.CTkFrame(btn_frame, fg_color="transparent")
         center_frame.pack(anchor="center")
 
+        def cancel_settings():
+            # Restore original value on cancel (no changes saved)
+            self.tray_radio_var.set(original_tray_on)
+            settings_window.destroy()
+
         cancel_btn = customtkinter.CTkButton(
             center_frame,
             text="Cancel",
-            command=settings_window.destroy,
+            command=cancel_settings,
             height=self.ui.size(36),
             width=self.ui.size(110),
             fg_color=("#D32F2F", "#C62828"),
